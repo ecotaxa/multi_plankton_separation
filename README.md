@@ -1,5 +1,5 @@
 # multi_plankton_separation
-[![Build Status](https://jenkins.indigo-datacloud.eu/buildStatus/icon?job=Pipeline-as-code/DEEP-OC-org/UC-emmaamblard-multi_plankton_separation/master)](https://jenkins.indigo-datacloud.eu/job/Pipeline-as-code/job/DEEP-OC-org/job/UC-emmaamblard-multi_plankton_separation/job/master)
+[![Build Status](https://jenkins.indigo-datacloud.eu/buildStatus/icon?job=Pipeline-as-code/DEEP-OC-org/UC-emmaamblard-multi_plankton_separation/test)](https://jenkins.indigo-datacloud.eu/job/Pipeline-as-code/job/DEEP-OC-org/job/UC-emmaamblard-multi_plankton_separation/job/test)
 
 Automatic separation of objects in images containing multiple plankton organisms
 
