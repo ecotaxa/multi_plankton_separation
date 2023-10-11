@@ -23,24 +23,25 @@ module [2].
 [2]: https://github.com/deephdc/demo_app
 """
 
-import base64
-import json
 import pkg_resources
 import os
 import torch
 import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
+import cv2
 
-from scipy import ndimage as ndi
-from skimage.segmentation import watershed
-from skimage.feature import peak_local_max
 from PIL import Image
 from webargs import fields
 
 import multi_plankton_separation.config as cfg
 from multi_plankton_separation.misc import _catch_error
-from multi_plankton_separation.utils import get_model_instance_segmentation
+from multi_plankton_separation.utils import (
+    load_saved_model,
+    get_model_categories,
+    get_predicted_masks,
+    get_watershed_result
+)
 
 
 @_catch_error
@@ -104,13 +105,11 @@ def get_metadata():
 
 def get_predict_args():
     """
-    TODO: add more dtypes
-    * int with choices
-    * composed: list of strs, list of int
+    Get the list of arguments for the predict function
     """
-    # WARNING: missing!=None has to go with required=False
-    # fmt: off
+    # Get list of available models
     list_models = [filename[:-3] for filename in os.listdir(cfg.MODEL_DIR) if filename.endswith(".pt")]
+
     arg_dict = {
          "image": fields.Field(
              required=True,
@@ -130,99 +129,81 @@ def get_predict_args():
             description="The minimum confidence score for a mask to be selected"
         ),
     }
-    # fmt: on
+
     return arg_dict
 
 
 @_catch_error
 def predict(**kwargs):
     """
-    Return same inputs as provided. We also add additional fields
-    to test the functionality of the Gradio-based UI [1].
-       [1]: https://github.com/deephdc/deepaas_ui
+    Prediction function
     """
     #kwargs = {"model": "mask_multi_plankton_b8", "threshold": 0.9}
+
+    # Check if a GPU is available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load model
-    model_path = '{}/{}.pt'.format(cfg.MODEL_DIR, kwargs["model"])
-    cat_path = '{}/categories_{}.txt'.format(cfg.MODEL_DIR, kwargs["model"])
-
-    if os.path.exists(model_path):
-        state_dict = torch.load(model_path, map_location=device)
-        model = get_model_instance_segmentation(list(state_dict["roi_heads.mask_predictor.mask_fcn_logits.bias"].size())[0])
-        model.load_state_dict(state_dict)
-        CATEGORIES = []
-        with open(cat_path, 'r') as filehandle:
-            for line in filehandle:
-                currentPlace = line[:-1]
-                CATEGORIES.append(currentPlace)
-            
-    else:
-        message = 'Model not found.'
+    # Load model and categories
+    model = load_saved_model(kwargs["model"], device)
+    if model is None:
+        message = "Model not found."
         return message
     
-    # Convert image to tensor.
+    categories = get_model_categories(kwargs["model"])
+    if categories is None:
+        message = "Categories not found."
+        return message
+    
+    # Convert image to tensor
     transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()]) 
     orig_img = Image.open(kwargs['image'].filename)
     #orig_img = Image.open("/Users/emmaamblard/workarea/git/deep_project/img_00001.png")
     img = transform(orig_img)
 
     # Get predicted masks
-    model.eval()
-    pred = model([img])
-    threshold= float(kwargs['threshold'])
-
-    pred_class = [CATEGORIES[i] for i in list(pred[0]['labels'].numpy())] 
-    pred_boxes = [[(i[0], i[1]), (i[2], i[3])] for i in list(pred[0]['boxes'].detach().numpy())]
-    pred_score = list(pred[0]['scores'].detach().numpy())
-    pred_masks = (pred[0]['masks'].detach().numpy() > 0.7).squeeze(1)
-    try:
-        pred_t = [pred_score.index(x) for x in pred_score if x > threshold][-1]
-        pred_boxes = pred_boxes[:pred_t+1]   #Boxes.
-        pred_class = pred_class[:pred_t+1]   #Name of the class.
-        pred_score = pred_score[:pred_t+1]   #Prediction probability.
-        pred_masks = pred_masks[:pred_t+1]
-    except IndexError:
-        pred_t = 'null'
-        pred_boxes = 'null'
-        pred_class = 'null'
-        pred_score = 'null'
-        pred_masks = 'null'
+    pred_masks, pred_masks_probs = get_predicted_masks(model, categories, img, kwargs["threshold"])
     
-    fig, axes = plt.subplots(nrows=1, ncols=4, 
-                            figsize=(3 * 4, 3), 
-                            subplot_kw={'xticks': [], 'yticks': []})
-    axes[0].imshow(orig_img, interpolation='none')
-    pred_masks_hm = pred[0]["masks"].detach().numpy().squeeze(1)
+    # Get sum of masks probabilities and mask centers
     mask_sum = np.zeros(pred_masks[0].shape)
     mask_centers = []
-    for i in range(len(pred_boxes)):
-        mask_sum += pred_masks_hm[i]
+
+    for i in range(len(pred_masks_probs)):
+        mask_sum += pred_masks_probs[i]
         non_zero_x, non_zero_y = np.nonzero(pred_masks[i])
         mask_centers.append((int(non_zero_x.mean()), int(non_zero_y.mean())))
+
+    # Apply watershed algorithm
+    labels = get_watershed_result(mask_sum, mask_centers)
+
+    fig, axes = plt.subplots(nrows=1, ncols=4, figsize=(3 * 4, 3), subplot_kw={'xticks': [], 'yticks': []})
+
+    # Plot original image
+    axes[0].imshow(orig_img, interpolation='none')
+
+    # Plot mask map
     axes[1].imshow(mask_sum, cmap="viridis")
-    axes[1].set_title("Detected objects: {}".format(len(pred_boxes)))
-    
-    markers_mask = np.zeros(mask_sum.shape, dtype=bool)
-    for (x, y) in mask_centers:
-        markers_mask[x, y] = True
-    markers, _ = ndi.label(markers_mask)
-    watershed_mask = np.zeros(mask_sum.shape, dtype='int64')
-    watershed_mask[mask_sum > 0.1] = 1
-    labels = watershed(-mask_sum, markers, mask=watershed_mask, watershed_line=True)
-    labels[watershed_mask == 0] = -1
+    axes[1].set_title("Detected objects: {}".format(len(pred_masks)))
+
+    # Plot watershed results
     axes[2].imshow(labels, interpolation='none')
 
-    lines = np.zeros(mask_sum.shape)
-    lines[labels == 0] = 1
-    x, y = np.nonzero(lines)
+    # Plot original image with separations
     axes[3].imshow(orig_img, interpolation='none')
-    axes[3].scatter(y, x, s=1, color='red')
+    separation_mask = np.ones(labels.shape)
+    separation_mask[labels != 0] = 'nan'
+    axes[3].imshow(separation_mask, cmap="Greys", interpolation='none')
 
+    # Save plot
     result_path = os.path.join(cfg.TEMP_DIR, "pred_result.png")
     plt.savefig(result_path, bbox_inches='tight')
     plt.close()
+
+    # Get output image with separations
+    cv2_img = cv2.cvtColor(np.array(orig_img), cv2.COLOR_BGR2GRAY)
+    cv2_img[separation_mask == 1] = 255
+    cv2_img = cv2_img.astype(np.float32)
+    output_path = os.path.join(cfg.TEMP_DIR, "out_image.png")
+    cv2.imwrite(output_path, cv2_img)
 
     message = "Result saved in {}".format(result_path)
 
