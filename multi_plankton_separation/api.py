@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 import cv2
 
 from PIL import Image
-from webargs import fields
+from webargs import fields, validate
 
 import multi_plankton_separation.config as cfg
 from multi_plankton_separation.misc import _catch_error
@@ -127,6 +127,11 @@ def get_predict_args():
             missing=0.9,
             description="The minimum confidence score for a mask to be selected"
         ),
+        "accept" : fields.Str(
+            required=False,
+            missing='image/png',
+            validate=validate.OneOf(['image/png']),
+            description="Returns an image or a json with the path to the saved result"),
     }
 
     return arg_dict
@@ -198,7 +203,10 @@ def predict(**kwargs):
     output_path = os.path.join(cfg.TEMP_DIR, "out_image.png")
     cv2.imwrite(output_path, cv2_img)
 
-    message = "Result saved in {}".format(result_path)
+    if(kwargs["accept"] == 'image/png'):
+        message = open(output_path, 'rb')
+    else:
+        message = "Result saved in {}".format(output_path)
 
     return message
 
