@@ -47,26 +47,7 @@ def load_saved_model(model_name, device):
     return model
 
 
-def get_model_categories(model_name):
-    """
-    Get the categories for a saved model
-    """
-    cat_path = '{}/categories_{}.txt'.format(cfg.MODEL_DIR, model_name)
-
-    if not os.path.exists(cat_path):
-        print("Categories for model {} not found.".format(model_name))
-        return None
-
-    categories = []
-    with open(cat_path, 'r') as filehandle:
-        for line in filehandle:
-            currentPlace = line[:-1]
-            categories.append(currentPlace)
-    
-    return categories
-
-
-def get_predicted_masks(model, categories, image, score_threshold=0.9, mask_threshold=0.7):
+def get_predicted_masks(model, image, score_threshold=0.9, mask_threshold=0.7):
     """
     Perform instance segmentation for a given image with the given model
     """

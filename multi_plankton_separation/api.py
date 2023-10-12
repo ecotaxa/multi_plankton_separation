@@ -38,7 +38,6 @@ import multi_plankton_separation.config as cfg
 from multi_plankton_separation.misc import _catch_error
 from multi_plankton_separation.utils import (
     load_saved_model,
-    get_model_categories,
     get_predicted_masks,
     get_watershed_result
 )
@@ -143,15 +142,10 @@ def predict(**kwargs):
     # Check if a GPU is available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load model and categories
+    # Load model
     model = load_saved_model(kwargs["model"], device)
     if model is None:
         message = "Model not found."
-        return message
-    
-    categories = get_model_categories(kwargs["model"])
-    if categories is None:
-        message = "Categories not found."
         return message
     
     # Convert image to tensor
@@ -161,7 +155,7 @@ def predict(**kwargs):
     img = transform(orig_img)
 
     # Get predicted masks
-    pred_masks, pred_masks_probs = get_predicted_masks(model, categories, img, kwargs["threshold"])
+    pred_masks, pred_masks_probs = get_predicted_masks(model, img, kwargs["threshold"])
     
     # Get sum of masks probabilities and mask centers
     mask_sum = np.zeros(pred_masks[0].shape)
@@ -201,7 +195,6 @@ def predict(**kwargs):
     # Get output image with separations
     cv2_img = cv2.cvtColor(np.array(orig_img), cv2.COLOR_BGR2GRAY)
     cv2_img[separation_mask == 1] = 255
-    cv2_img = cv2_img.astype(np.float32)
     output_path = os.path.join(cfg.TEMP_DIR, "out_image.png")
     cv2.imwrite(output_path, cv2_img)
 
