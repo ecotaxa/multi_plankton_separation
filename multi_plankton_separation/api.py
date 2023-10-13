@@ -29,16 +29,19 @@ import torch
 import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 from PIL import Image
 from webargs import fields, validate
+from skimage.segmentation import find_boundaries
 
 import multi_plankton_separation.config as cfg
 from multi_plankton_separation.misc import _catch_error
 from multi_plankton_separation.utils import (
     load_saved_model,
     get_predicted_masks,
-    get_watershed_result
+    get_watershed_result,
+    bounding_box
 )
 
 
@@ -155,7 +158,7 @@ def predict(**kwargs):
     # Convert image to tensor
     transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()]) 
     orig_img = Image.open(kwargs['image'].filename)
-    #orig_img = Image.open("/Users/emmaamblard/Downloads/seg_data/images/img_00030.png")
+    #orig_img = Image.open("/Users/emmaamblard/Downloads/seg_data/images/img_00105.png")
     img = transform(orig_img)
 
     # Get predicted masks
@@ -177,16 +180,9 @@ def predict(**kwargs):
     # Apply watershed algorithm
     watershed_labels = get_watershed_result(mask_sum, mask_centers)
 
-    # Identify the background to extract the separation lines
-    background = mask_sum < .01
-    #array_img = np.array(orig_img)
-    #background = (array_img[:,:,0] >= 255) & (array_img[:,:,1] >= 255) & (array_img[:,:,2] >= 255)
-    labels = watershed_labels.copy()
-    labels[background] = -1
-
     # Save output separations
-    separation_mask = np.ones(labels.shape)
-    separation_mask[labels != 0] = 'nan'
+    separation_mask = np.ones(watershed_labels.shape)
+    separation_mask[watershed_labels != 0] = 'nan'
     lines_image = Image.fromarray(separation_mask * 255).convert('L')
     output_path = os.path.join(cfg.TEMP_DIR, "out_image.png")
     lines_image.save(output_path)
@@ -198,6 +194,12 @@ def predict(**kwargs):
 
     # Plot original image
     axes[0].imshow(orig_img, interpolation='none')
+    for mask in pred_masks_probs:
+        rmin, rmax, cmin, cmax = bounding_box(mask)
+        x, y = cmin, rmin
+        width, height = cmax - cmin, rmax - rmin
+        rect = patches.Rectangle((x, y), width, height, linewidth=1, edgecolor='r', facecolor='none')
+        axes[0].add_patch(rect)
     axes[0].set_title("Detected objects: {}".format(len(pred_masks)))
 
     # Plot mask map

@@ -83,6 +83,20 @@ def get_watershed_result(mask_map, mask_centers):
     watershed_mask = np.zeros(mask_map.shape, dtype='int64')
     watershed_mask[mask_map > .01] = 1
 
-    labels = watershed(-mask_map, markers, mask=watershed_mask, watershed_line=True)
+    labels = watershed(-mask_map, markers, mask=watershed_mask, watershed_line=False)
+    labels_with_lines = watershed(-mask_map, markers, mask=watershed_mask, watershed_line=True)
+    labels_with_lines[labels == 0] = -1
 
-    return labels
+    return labels_with_lines
+
+
+def bounding_box(img):
+    """
+    Get the corners of the bounding box of an object on a white background
+    """
+    rows = np.any(img, axis=1)
+    cols = np.any(img, axis=0)
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+
+    return rmin, rmax, cmin, cmax
