@@ -29,7 +29,6 @@ import torch
 import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
-import cv2
 
 from PIL import Image
 from webargs import fields, validate
@@ -156,7 +155,7 @@ def predict(**kwargs):
     # Convert image to tensor
     transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()]) 
     orig_img = Image.open(kwargs['image'].filename)
-    #orig_img = Image.open("/Users/emmaamblard/workarea/git/deep_project/img_00001.png")
+    #orig_img = Image.open("/Users/emmaamblard/Downloads/seg_data/images/img_00000.png")
     img = transform(orig_img)
 
     # Get predicted masks
@@ -172,36 +171,47 @@ def predict(**kwargs):
         mask_centers.append((int(non_zero_x.mean()), int(non_zero_y.mean())))
 
     # Apply watershed algorithm
-    labels = get_watershed_result(mask_sum, mask_centers)
+    watershed_labels = get_watershed_result(mask_sum, mask_centers)
 
-    fig, axes = plt.subplots(nrows=1, ncols=4, figsize=(3 * 4, 3), subplot_kw={'xticks': [], 'yticks': []})
+    # Identify the background to extract the separation lines
+    background = mask_sum < .01
+    labels = watershed_labels.copy()
+    labels[background] = -1
+
+    # Save output separations
+    separation_mask = np.ones(labels.shape)
+    separation_mask[labels != 0] = 'nan'
+    lines_image = Image.fromarray(separation_mask * 255).convert('L')
+    output_path = os.path.join(cfg.TEMP_DIR, "out_image.png")
+    lines_image.save(output_path)
+
+    fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(3 * 5, 3), subplot_kw={'xticks': [], 'yticks': []})
 
     # Plot original image
     axes[0].imshow(orig_img, interpolation='none')
+    axes[0].set_title("Detected objects: {}".format(len(pred_masks)))
 
     # Plot mask map
     axes[1].imshow(mask_sum, cmap="viridis")
-    axes[1].set_title("Detected objects: {}".format(len(pred_masks)))
+    axes[1].set_title("Sum of predicted masks")
 
     # Plot watershed results
-    axes[2].imshow(labels, interpolation='none')
+    axes[2].imshow(watershed_labels, interpolation='none')
+    axes[2].set_title("Watershed result")
 
     # Plot original image with separations
     axes[3].imshow(orig_img, interpolation='none')
-    separation_mask = np.ones(labels.shape)
-    separation_mask[labels != 0] = 'nan'
-    axes[3].imshow(separation_mask, cmap="Greys", interpolation='none')
+    axes[3].imshow(separation_mask, interpolation='none')
+    axes[3].set_title("Extracted line(s)")
+
+    # Plot output
+    axes[4].imshow(lines_image, cmap='Greys_r', interpolation='none')
+    axes[4].set_title("Output")
 
     # Save plot
     result_path = os.path.join(cfg.TEMP_DIR, "pred_result.png")
     plt.savefig(result_path, bbox_inches='tight')
     plt.close()
-
-    # Get output image with separations
-    cv2_img = cv2.cvtColor(np.array(orig_img), cv2.COLOR_BGR2GRAY)
-    cv2_img[separation_mask == 1] = 255
-    output_path = os.path.join(cfg.TEMP_DIR, "out_image.png")
-    cv2.imwrite(output_path, cv2_img)
 
     if(kwargs["accept"] == 'image/png'):
         message = open(output_path, 'rb')

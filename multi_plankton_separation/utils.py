@@ -81,7 +81,7 @@ def get_watershed_result(mask_map, mask_centers):
     markers, _ = ndi.label(markers_mask)
 
     watershed_mask = np.zeros(mask_map.shape, dtype='int64')
-    watershed_mask[mask_map > 0.1] = 1
+    watershed_mask[mask_map > .01] = 1
 
     labels = watershed(-mask_map, markers, mask=watershed_mask, watershed_line=True)
 
