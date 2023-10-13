@@ -155,7 +155,7 @@ def predict(**kwargs):
     # Convert image to tensor
     transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()]) 
     orig_img = Image.open(kwargs['image'].filename)
-    #orig_img = Image.open("/Users/emmaamblard/Downloads/seg_data/images/img_00000.png")
+    #orig_img = Image.open("/Users/emmaamblard/Downloads/seg_data/images/img_00030.png")
     img = transform(orig_img)
 
     # Get predicted masks
@@ -163,18 +163,24 @@ def predict(**kwargs):
     
     # Get sum of masks probabilities and mask centers
     mask_sum = np.zeros(pred_masks[0].shape)
-    mask_centers = []
+    mask_centers_x = []
+    mask_centers_y = []
 
-    for i in range(len(pred_masks_probs)):
-        mask_sum += pred_masks_probs[i]
-        non_zero_x, non_zero_y = np.nonzero(pred_masks[i])
-        mask_centers.append((int(non_zero_x.mean()), int(non_zero_y.mean())))
+    for mask in pred_masks_probs:
+        mask_sum += mask
+        center_x, center_y = np.unravel_index(np.argmax(mask), mask.shape)
+        mask_centers_x.append(center_x)
+        mask_centers_y.append(center_y)
+    
+    mask_centers = zip(mask_centers_x, mask_centers_y)
 
     # Apply watershed algorithm
     watershed_labels = get_watershed_result(mask_sum, mask_centers)
 
     # Identify the background to extract the separation lines
     background = mask_sum < .01
+    #array_img = np.array(orig_img)
+    #background = (array_img[:,:,0] >= 255) & (array_img[:,:,1] >= 255) & (array_img[:,:,2] >= 255)
     labels = watershed_labels.copy()
     labels[background] = -1
 
@@ -185,7 +191,10 @@ def predict(**kwargs):
     output_path = os.path.join(cfg.TEMP_DIR, "out_image.png")
     lines_image.save(output_path)
 
-    fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(3 * 5, 3), subplot_kw={'xticks': [], 'yticks': []})
+    plot_width = mask_sum.shape[0] + 1000
+    plot_height = mask_sum.shape[1] + 1000
+    px = 1/plt.rcParams['figure.dpi']
+    fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(plot_width * 5 * px, plot_height * px), subplot_kw={'xticks': [], 'yticks': []})
 
     # Plot original image
     axes[0].imshow(orig_img, interpolation='none')
@@ -197,7 +206,8 @@ def predict(**kwargs):
 
     # Plot watershed results
     axes[2].imshow(watershed_labels, interpolation='none')
-    axes[2].set_title("Watershed result")
+    axes[2].scatter(mask_centers_y, mask_centers_x, color='red')
+    axes[2].set_title("Watershed with markers")
 
     # Plot original image with separations
     axes[3].imshow(orig_img, interpolation='none')
