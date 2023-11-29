@@ -6,7 +6,7 @@ import numpy as np
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 from scipy import ndimage as ndi
-from skimage.segmentation import watershed
+from skimage.segmentation import watershed, find_boundaries
 
 import multi_plankton_separation.config as cfg
 
@@ -75,26 +75,45 @@ def get_predicted_masks(model, image, score_threshold=0.9, mask_threshold=0.7):
     return pred_masks, pred_masks_probs
 
 
-def get_watershed_result(mask_map, mask_centers):
+def get_watershed_result(mask_map, mask_centers, mask=None):
     """
     Apply the watershed algorithm on the predicted mask map,
     using the mask centers as markers
     """
+    # Prepare watershed markers
     markers_mask = np.zeros(mask_map.shape, dtype=bool)
     for (x, y) in mask_centers:
         markers_mask[x, y] = True
     markers, _ = ndi.label(markers_mask)
 
-    watershed_mask = np.zeros(mask_map.shape, dtype='int64')
-    watershed_mask[mask_map > .01] = 1
+    # Prepare watershed mask
+    if mask is None:
+        watershed_mask = np.zeros(mask_map.shape, dtype='int64')
+        watershed_mask[mask_map > .01] = 1
+    else:
+        watershed_mask = mask
 
+    # Apply watershed
     labels = watershed(
         -mask_map, markers, mask=watershed_mask, watershed_line=False
     )
-    labels_with_lines = watershed(
-        -mask_map, markers, mask=watershed_mask, watershed_line=True
-    )
-    labels_with_lines[labels == 0] = -1
+
+    # Derive separation lines
+    lines = np.zeros(labels.shape)
+    unique_labels = list(np.unique(labels))
+    unique_labels.remove(0)
+
+    for value in unique_labels:
+        single_shape = (labels == value).astype(int)
+        boundaries = find_boundaries(
+            single_shape, connectivity=2, mode='outer', background=0
+        )
+        boundaries[(labels == 0) | (labels == value)] = 0
+        lines[boundaries == 1] = 1
+
+    labels_with_lines = labels
+    labels_with_lines[labels_with_lines == 0] = -1
+    labels_with_lines[lines == 1] = 0
 
     return labels_with_lines
 

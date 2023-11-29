@@ -75,34 +75,6 @@ def get_metadata():
     return meta
 
 
-# def get_train_args():
-#     arg_dict = {
-#         "epoch_num": fields.Int(
-#             required=False,
-#             missing=10,
-#             description="Total number of training epochs",
-#         ),
-#     }
-#     return arg_dict
-
-
-# def train(**kwargs):
-#     """
-#     Dummy training. We just sleep for some number of epochs (1 epoch = 1 second)
-#     mimicking some computation taking place.
-#     We can log some random losses in Tensorboard to mimic monitoring.
-#     """
-#     logdir = BASE_DIR / "runs" / time.strftime("%Y-%m-%d_%H-%M-%S")
-#     writer = SummaryWriter(logdir=logdir)
-#     launch_tensorboard(logdir=logdir)
-#     for epoch in range(kwargs["epoch_num"]):
-#         time.sleep(1.)
-#         writer.add_scalar("scalars/loss", - math.log(epoch + 1), epoch)
-#     writer.close()
-
-#     return {"status": "done", "final accuracy": 0.9}
-
-
 def get_predict_args():
     """
     Get the list of arguments for the predict function
@@ -125,10 +97,15 @@ def get_predict_args():
             enum=list_models,
             description="The model used to perform instance segmentation"
         ),
-        "threshold": fields.Float(
+        "min_mask_score": fields.Float(
             required=False,
             missing=0.9,
             description="The minimum confidence score for a mask to be selected"
+        ),
+        "min_mask_value": fields.Float(
+            required=False,
+            missing=0.5,
+            description="The minimum value for a pixel to belong to a mask"
         ),
         "accept" : fields.Str(
             required=False,
@@ -162,23 +139,31 @@ def predict(**kwargs):
     img = transform(orig_img)
 
     # Get predicted masks
-    pred_masks, pred_masks_probs = get_predicted_masks(model, img, kwargs["threshold"])
+    pred_masks, pred_masks_probs = get_predicted_masks(
+        model, img, kwargs["min_mask_score"]
+    )
 
     # Get sum of masks probabilities and mask centers
     mask_sum = np.zeros(pred_masks[0].shape)
     mask_centers_x = []
     mask_centers_y = []
 
+    # Get sum of masks and mask centers for the watershed
     for mask in pred_masks_probs:
-        mask_sum += mask
+        to_add = mask
+        to_add[to_add < kwargs["min_mask_value"]] = 0
+        mask_sum += to_add
         center_x, center_y = np.unravel_index(np.argmax(mask), mask.shape)
         mask_centers_x.append(center_x)
         mask_centers_y.append(center_y)
 
     mask_centers = zip(mask_centers_x, mask_centers_y)
 
+    # Get silhouette of objects to use as a mask for the watershed
+    binary_img = (img[0, :, :] + img[1, :, :] + img[2, :, :] != 3).numpy().astype(float)
+
     # Apply watershed algorithm
-    watershed_labels = get_watershed_result(mask_sum, mask_centers)
+    watershed_labels = get_watershed_result(mask_sum, mask_centers, mask=binary_img)
 
     # Save output separations
     separation_mask = np.ones(watershed_labels.shape)
