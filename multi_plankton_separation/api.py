@@ -86,9 +86,7 @@ def get_predict_args():
     
     #######Mettre à jour la liste des modèles
     list_models = list()
-    '''list_models = [filename[:-3]
-                   for filename in os.listdir(cfg.MODEL_DIR)
-                   if filename.endswith(".pt")]'''
+
     for filename in os.listdir(cfg.MODEL_DIR):
         if filename.endswith(".pt"):
             list_models.append(filename[:-3])
@@ -134,19 +132,6 @@ def get_predict_args():
 def predict(**kwargs):
     """
     Prediction function
-    """
-    ### ajouter un dictionnaire kwargs avec les bonne valeurs à tester
-    kwargs={"model":"learn_placton_pano_plus5000_8epoch",
-           "image":"/home/lovnower/multi_plankton_seg/seg_data_with_5000_solo/test/images/img_00003.png",
-           "min_mask_score":0.9,
-           "min_mask_value":0.7,
-           "accept":'image/png'}
-    
-    '''kwargs={"model":"default_mask_multi_plankton",
-           "image":"/home/lovnower/multi_plankton_seg/seg_data_with_5000_solo/test/images/img_00003.png",
-           "min_mask_score":0.9,
-           "min_mask_value":0.7,
-           "accept":'image/png'}'''
     
     # Check if a GPU is available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -171,12 +156,12 @@ def predict(**kwargs):
     # Get predicted masks
     if model_type == 'rcnn':
 
-        #mask_sum, mask_centers, binary_img = mask_maskrcnn(model, kwargs['image'].filename, kwargs["min_mask_score"], kwargs["min_mask_value"])
+        #mask_sum, centersx, centersy, binary_img, pred_masks_probs, nb_obj_detected = mask_maskrcnn(model, kwargs['image'].filename, kwargs["min_mask_score"], kwargs["min_mask_value"])
         mask_sum, centersx, centersy, binary_img, pred_masks_probs, nb_obj_detected = predict_mask_maskrcnn(model, kwargs['image'], kwargs["min_mask_score"], kwargs["min_mask_value"])
         mask_centers = zip(centersx,centersy)
 
     else:
-        #mask_sum, mask_centers, binary_img = predict_mask_panoptic(model, kwargs['image'].filename, kwargs["min_mask_score"])
+        #mask_sum, mask_centers, binary_img = predict_mask_panoptic(model, processor, kwargs['image'].filename, device, kwargs["min_mask_score"])
         mask_sum, mask_centers, binary_img = predict_mask_panoptic(model, processor, kwargs['image'], device, kwargs["min_mask_score"])
     
     
