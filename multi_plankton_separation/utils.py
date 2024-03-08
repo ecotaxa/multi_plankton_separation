@@ -57,7 +57,15 @@ def load_saved_model_pano(model_name,device):
     """
     Load a panoptic saved model for a given model_name
     """
+    import zipfile
+    
     model_path = '{}/{}'.format(cfg.MODEL_DIR, model_name)
+
+    if not os.path.exists(model_path[:-4]):
+        with zipfile.ZipFile(model_path, 'r') as zip_ref:
+            zip_ref.extractall(model_path.strip(model_path.split("/")[-1]))    
+    
+    model_path=model_path[:-4]
 
     if not os.path.exists(model_path):
         print("Model {} not found.".format(model_name))
