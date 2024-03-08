@@ -52,13 +52,12 @@ def load_saved_model(model_name, device):
 
     return model
 
+
 def load_saved_model_pano(model_name,device):
     """
     Load a panoptic saved model for a given model_name
     """
     model_path = '{}/{}'.format(cfg.MODEL_DIR, model_name)
-    print("dans le load panoptic")
-    print(model_path)
 
     if not os.path.exists(model_path):
         print("Model {} not found.".format(model_name))
@@ -69,6 +68,7 @@ def load_saved_model_pano(model_name,device):
     model.to(device)
     
     return model,processor
+
 
 def predict_mask_maskrcnn(model, image_path, score_threshold, mask_threshold):
     """
@@ -83,8 +83,6 @@ def predict_mask_maskrcnn(model, image_path, score_threshold, mask_threshold):
     pred_masks, pred_masks_probs = get_predicted_masks(
         model, img, score_threshold
     )
-    
-    print(len(pred_masks_probs))
 
     # Get sum of masks probabilities and mask centers
     mask_sum = np.zeros(pred_masks[0].shape)
@@ -97,27 +95,14 @@ def predict_mask_maskrcnn(model, image_path, score_threshold, mask_threshold):
         to_add[to_add < mask_threshold] = 0
         mask_sum += to_add
         center_x, center_y = np.unravel_index(np.argmax(mask), mask.shape)
-        print(center_x, center_y)
         mask_centers_x.append(center_x)
         mask_centers_y.append(center_y)
-    print(mask_centers_x)
-    print(mask_centers_y)
     mask_centers = zip(mask_centers_x, mask_centers_y)
-    
-    print("mask centers ", list(mask_centers))
 
     # Get silhouette of objects to use as a mask for the watershed
     binary_img = (img[0, :, :] + img[1, :, :] + img[2, :, :] != 3).numpy().astype(float)
     
     mask_centers = zip(mask_centers_x, mask_centers_y)
-    print("mask centers ", list(mask_centers))
-    
-    print("return")
-    print(mask_sum)
-    print("mask centers ",list(mask_centers))
-    print(binary_img)
-    print(pred_masks_probs)
-    print(len(pred_masks))
     
     return mask_sum, mask_centers_x, mask_centers_y, binary_img, pred_masks_probs, len(pred_masks)
 
@@ -144,7 +129,6 @@ def get_predicted_masks(model, image, score_threshold=0.9, mask_threshold=0.7):
         pred_masks_probs = 'null'
 
     return pred_masks, pred_masks_probs
-
 
 
 def predict_mask_panoptic(model, processor, image_path, device, score_threshold=0.9):
