@@ -179,7 +179,7 @@ def predict(**kwargs):
                              subplot_kw={'xticks': [], 'yticks': []})
 
     # Plot original image
-    orig_img = Image.open(kwargs['image']) #.filename
+    orig_img = Image.open(kwargs['image'].filename)
     axes[0].imshow(orig_img, interpolation='none')
     if model_type=='rcnn':
         for mask in pred_masks_probs:
