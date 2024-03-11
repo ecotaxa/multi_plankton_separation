@@ -38,7 +38,9 @@ import multi_plankton_separation.config as cfg
 from multi_plankton_separation.misc import _catch_error
 from multi_plankton_separation.utils import (
     load_saved_model,
-    get_predicted_masks,
+    load_saved_model_pano,
+    predict_mask_maskrcnn,
+    predict_mask_panoptic,
     get_watershed_result,
     bounding_box
 )
@@ -80,9 +82,17 @@ def get_predict_args():
     Get the list of arguments for the predict function
     """
     # Get list of available models
-    list_models = [filename[:-3]
-                   for filename in os.listdir(cfg.MODEL_DIR)
-                   if filename.endswith(".pt")]
+    
+    
+    #######Mettre à jour la liste des modèles
+    list_models = list()
+
+    for filename in os.listdir(cfg.MODEL_DIR):
+        if filename.endswith(".pt"):
+            list_models.append(filename[:-3])
+        elif "pano" in filename:
+            list_models.append(filename)
+                        
 
     arg_dict = {
         "image": fields.Field(
@@ -123,45 +133,34 @@ def predict(**kwargs):
     """
     Prediction function
     """
-
+    
     # Check if a GPU is available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Load model
-    model = load_saved_model(kwargs["model"], device)
+    if 'default' in kwargs["model"]:
+        model_type='rcnn'
+    else:
+        model_type='panoptic'
+        
+    #model_type='panoptic'
+    if model_type == 'rcnn':
+        model = load_saved_model(kwargs["model"], device)
+    else:
+        model, processor = load_saved_model_pano(kwargs["model"], device)
+        
     if model is None:
         message = "Model not found."
         return message
 
-    # Convert image to tensor
-    transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-    orig_img = Image.open(kwargs['image'].filename)
-    img = transform(orig_img)
 
     # Get predicted masks
-    pred_masks, pred_masks_probs = get_predicted_masks(
-        model, img, kwargs["min_mask_score"]
-    )
-
-    # Get sum of masks probabilities and mask centers
-    mask_sum = np.zeros(pred_masks[0].shape)
-    mask_centers_x = []
-    mask_centers_y = []
-
-    # Get sum of masks and mask centers for the watershed
-    for mask in pred_masks_probs:
-        to_add = mask
-        to_add[to_add < kwargs["min_mask_value"]] = 0
-        mask_sum += to_add
-        center_x, center_y = np.unravel_index(np.argmax(mask), mask.shape)
-        mask_centers_x.append(center_x)
-        mask_centers_y.append(center_y)
-
-    mask_centers = zip(mask_centers_x, mask_centers_y)
-
-    # Get silhouette of objects to use as a mask for the watershed
-    binary_img = (img[0, :, :] + img[1, :, :] + img[2, :, :] != 3).numpy().astype(float)
-
+    if model_type == 'rcnn':
+        mask_sum, centersx, centersy, binary_img, pred_masks_probs, nb_obj_detected = predict_mask_maskrcnn(model, kwargs['image'].filename, kwargs["min_mask_score"], kwargs["min_mask_value"])
+        mask_centers = zip(centersx,centersy)
+    else:
+        mask_sum, mask_centers, binary_img = predict_mask_panoptic(model, processor, kwargs['image'].filename, device, kwargs["min_mask_score"])
+     
     # Apply watershed algorithm
     watershed_labels = get_watershed_result(mask_sum, mask_centers, mask=binary_img)
 
@@ -180,15 +179,17 @@ def predict(**kwargs):
                              subplot_kw={'xticks': [], 'yticks': []})
 
     # Plot original image
+    orig_img = Image.open(kwargs['image'].filename)
     axes[0].imshow(orig_img, interpolation='none')
-    for mask in pred_masks_probs:
-        rmin, rmax, cmin, cmax = bounding_box(mask)
-        x, y = cmin, rmin
-        width, height = cmax - cmin, rmax - rmin
-        rect = patches.Rectangle((x, y), width, height,
-                                 linewidth=1, edgecolor='r', facecolor='none')
-        axes[0].add_patch(rect)
-    axes[0].set_title("Detected objects: {}".format(len(pred_masks)))
+    if model_type=='rcnn':
+        for mask in pred_masks_probs:
+            rmin, rmax, cmin, cmax = bounding_box(mask)
+            x, y = cmin, rmin
+            width, height = cmax - cmin, rmax - rmin
+            rect = patches.Rectangle((x, y), width, height,
+                                     linewidth=1, edgecolor='r', facecolor='none')
+            axes[0].add_patch(rect)
+        axes[0].set_title("Detected objects: {}".format(nb_obj_detected))
 
     # Plot mask map
     axes[1].imshow(mask_sum, cmap="viridis")
@@ -196,7 +197,9 @@ def predict(**kwargs):
 
     # Plot watershed results
     axes[2].imshow(watershed_labels, interpolation='none')
-    axes[2].scatter(mask_centers_y, mask_centers_x, color='red')
+    
+    if model_type=='rcnn':
+        axes[2].scatter(centersx, centersy, color='red')
     axes[2].set_title("Watershed with markers")
 
     # Plot original image with separations
@@ -219,3 +222,4 @@ def predict(**kwargs):
         message = "Result saved in {}".format(output_path)
 
     return message
+
