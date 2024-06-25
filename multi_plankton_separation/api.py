@@ -155,11 +155,12 @@ def predict(**kwargs):
 
 
     # Get predicted masks
+    score=0
     if model_type == 'rcnn':
         mask_sum, centersx, centersy, binary_img, pred_masks_probs, nb_obj_detected = predict_mask_maskrcnn(model, kwargs['image'].filename, kwargs["min_mask_score"], kwargs["min_mask_value"])
         mask_centers = zip(centersx,centersy)
     else:
-        mask_sum, mask_centers, binary_img = predict_mask_panoptic(model, processor, kwargs['image'].filename, device, kwargs["min_mask_score"])
+        mask_sum, mask_centers, binary_img, score = predict_mask_panoptic(model, processor, kwargs['image'].filename, device, kwargs["min_mask_score"])
      
     # Apply watershed algorithm
     watershed_labels = get_watershed_result(mask_sum, mask_centers, mask=binary_img)
@@ -221,5 +222,5 @@ def predict(**kwargs):
     else:
         message = "Result saved in {}".format(output_path)
 
-    return message
+    return message, score
 
