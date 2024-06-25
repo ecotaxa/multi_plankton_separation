@@ -144,6 +144,7 @@ def predict_mask_panoptic(model, processor, image_path, device, score_threshold=
     Perform the mask segmention for a given image with a panoptic model
     """
     import albumentations as A
+    from skimage.measure import label
     
     image = Image.open(image_path).convert("RGB")
     
@@ -173,21 +174,39 @@ def predict_mask_panoptic(model, processor, image_path, device, score_threshold=
     distances = np.zeros(panoptic_masks.shape)
     mask_centers = list()
     scores = list()
+    
+    list_segments_obj_detectes = [i for i,d in enumerate(results["segments_info"]) if results["segments_info"][i]["label_id"] ==1 and results["segments_info"][i]["score"]>0.9]
+    
     for segment_info in results["segments_info"]:
         if segment_info["score"] < score_threshold:
             continue          
         if segment_info["label_id"] == 0:
-            continue
+            background_img = np.full(gray_img.shape,len(list_segments_obj_detectes)+1)
+            for i in list_segments_obj_detectes:
+                background_img[panoptic_masks == results["segments_info"][i]["id"]] = 0
+            background_img[binary_image == 0] = 0
+            obj_non_detect = label(background_img, background=0, return_num=False, connectivity=2)
+            cpt_non_detect=0
+            for label_value in np.unique(obj_non_detect):
+                if label_value == 0:  # ignore background
+                    continue               
+                if (obj_non_detect == label_value).astype(int).sum() > 800:  # very small regions are considered as background
+                    single_mask = (obj_non_detect == label_value).astype(int)
+                    dist = ndi.distance_transform_edt(single_mask)
+                    distances += dist
+                    ind = np.unravel_index(np.argmax(dist, axis=None), dist.shape)
+                    mask_centers.append((ind[0], ind[1]))
+                    scores.append(segment_info["score"])
+                    cpt_non_detect+=1
         else:
             single_mask = (panoptic_masks == segment_info["id"]).astype(int)
-            
-        dist = ndi.distance_transform_edt(single_mask)
-        distances += dist
-        ind = np.unravel_index(np.argmax(dist, axis=None), dist.shape)
-        mask_centers.append((ind[0], ind[1]))
-        scores.append(segment_info["score"])
+            dist = ndi.distance_transform_edt(single_mask)
+            distances += dist
+            ind = np.unravel_index(np.argmax(dist, axis=None), dist.shape)
+            mask_centers.append((ind[0], ind[1]))
+            scores.append(segment_info["score"])
     
-    return distances,mask_centers,binary_image
+    return distances,mask_centers,binary_image,np.mean(scores)
 
 
 
