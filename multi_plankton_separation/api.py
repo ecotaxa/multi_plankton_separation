@@ -222,5 +222,5 @@ def predict(**kwargs):
     else:
         message = "Result saved in {}".format(output_path)
 
-    return message, score
+    return message, str(score)
 
